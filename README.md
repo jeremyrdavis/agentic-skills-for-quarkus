@@ -54,6 +54,7 @@ A Quarkus project that doesn't use DDD can install `quarkus-skills` alone; it ca
 
 ```bash
 git clone https://github.com/jeremyrdavis/agentic-skills-for-quarkus.git
+mkdir -p <your-project>/.claude/skills
 cp -r agentic-skills-for-quarkus/skills/* <your-project>/.claude/skills/
 ```
 

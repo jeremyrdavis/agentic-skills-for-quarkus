@@ -28,6 +28,10 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 import jakarta.transaction.Transactional;
 
+import static com.tngtech.archunit.base.DescribedPredicate.not;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleNameEndingWith;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.*;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
@@ -36,8 +40,11 @@ class OrdersArchitectureTest {
 
     // ddd-foundations Rules 1–6: four layers, arrows point inward only.
     // Infrastructure may call Application: inbound adapters (observers, Kafka consumers) invoke use cases.
+    // The one tolerated api → domain edge: exception mappers name the domain exceptions they map
+    // (ddd-foundations placement table; ddd-persistence Rule 7's 409 mapping).
     @ArchTest
     static final ArchRule layers = layeredArchitecture().consideringOnlyDependenciesInLayers()
+            .ignoreDependency(resideInAPackage("..orders.api.."), simpleNameEndingWith("Exception"))
             .layer("Domain").definedBy("..orders.domain..")
             .layer("Application").definedBy("..orders.application..")
             .layer("Infrastructure").definedBy("..orders.infrastructure..")
@@ -55,10 +62,11 @@ class OrdersArchitectureTest {
                     "jakarta.persistence..", "jakarta.transaction..", "jakarta.ws.rs..",
                     "io.quarkus..", "org.eclipse.microprofile..", "org.hibernate..");
 
-    // ddd-foundations Rule 12: resources see application only.
+    // ddd-foundations Rule 12: resources see application only — the same exception-mapper carve-out as above.
     @ArchTest
     static final ArchRule apiSeesApplicationOnly = noClasses().that().resideInAPackage("..orders.api..")
-            .should().dependOnClassesThat().resideInAnyPackage("..orders.domain..", "..orders.infrastructure..");
+            .should().dependOnClassesThat(resideInAnyPackage("..orders.domain..", "..orders.infrastructure..")
+                    .and(not(simpleNameEndingWith("Exception"))));
 
     // quarkus-ddd mechanic 1: the transaction boundary is the application service, nowhere else.
     @ArchTest
@@ -71,15 +79,19 @@ class OrdersArchitectureTest {
     static final ArchRule applicationServicesInApplication = classes().that().haveSimpleNameEndingWith("ApplicationService")
             .should().resideInAPackage("..orders.application..");
 
+    // allowEmptyShould: ArchUnit fails a rule whose selection is empty, and a context with no
+    // domain service — or no misnamed service — is a valid context.
     @ArchTest
     static final ArchRule domainServicesInDomain = classes().that().haveSimpleNameEndingWith("DomainService")
-            .should().resideInAPackage("..orders.domain..");
+            .should().resideInAPackage("..orders.domain..")
+            .allowEmptyShould(true);
 
     @ArchTest
     static final ArchRule noUnqualifiedService = noClasses().that().haveSimpleNameEndingWith("Service")
             .and().haveSimpleNameNotEndingWith("ApplicationService")
             .and().haveSimpleNameNotEndingWith("DomainService")
-            .should().resideInAPackage("..orders..");
+            .should().resideInAPackage("..orders..")
+            .allowEmptyShould(true);
 
     // ddd-foundations Rule 7 / ddd-persistence Rule 3: the interface is domain, the Panache class is infrastructure.
     @ArchTest
@@ -93,6 +105,9 @@ class OrdersArchitectureTest {
 - `consideringOnlyDependenciesInLayers()` ignores JDK and library dependencies
   in the layer rule; the separate `domainIsPlain` rule is what keeps the
   framework out of `domain`.
+- `*Exception` is the only domain name `api` may touch, and only so the
+  `@ServerExceptionMapper` can map it; the carve-out is by suffix, so keep
+  domain exceptions named `*Exception`.
 - If the api layer needs a typed ID in a signature, convert at the edge
   (`new OrderId(UUID.fromString(id))` happens in the application service's
   command constructor, not in the resource) — keep `apiSeesApplicationOnly`

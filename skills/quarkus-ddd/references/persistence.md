@@ -47,8 +47,12 @@ package com.example.orders.infrastructure;
 import com.example.orders.domain.*;
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
+// Mirrors the canonical Order in ddd-aggregates/references/canonical-example-java.md:
+// same fields, and toDomain() calls rehydrate(...) with its exact parameter list.
 @Entity
 @Table(name = "orders")
 public class OrderRecord {
@@ -59,7 +63,11 @@ public class OrderRecord {
     @Embedded private MoneyColumns total;             // value object → @Embeddable, no identity
     @Enumerated(EnumType.STRING) private Order.Status status;
     private Instant placedAt;
-    // lines: @ElementCollection or a child @Entity — still inside the mirror
+    @ElementCollection(fetch = FetchType.EAGER)       // lines are value objects inside the aggregate: no identity,
+    @CollectionTable(name = "order_lines",            // loaded and saved with the root, covered by its @Version
+                     joinColumns = @JoinColumn(name = "order_id"))
+    @OrderColumn(name = "position")
+    private List<OrderLineColumns> lines = new ArrayList<>();
 
     protected OrderRecord() {}                        // JPA's constructor — the mirror's problem, not the aggregate's
 
@@ -71,12 +79,14 @@ public class OrderRecord {
         r.total = MoneyColumns.of(order.total());
         r.status = order.status();
         r.placedAt = order.placedAt();
+        r.lines = new ArrayList<>(order.lines().stream().map(OrderLineColumns::of).toList());
         return r;
     }
 
     Order toDomain() {                                // inbound translation — the only rehydrate caller (Rule 5)
-        return Order.rehydrate(new OrderId(id), version, new CustomerId(customerId),
-                               total.toDomain(), status, placedAt /*, lines */);
+        return Order.rehydrate(id, new CustomerId(customerId),
+                               lines.stream().map(OrderLineColumns::toDomain).toList(),
+                               status, total.toDomain(), placedAt, version);
     }
 
     OrderSummary toSummary() {
@@ -87,7 +97,10 @@ public class OrderRecord {
 
 `MoneyColumns` is an `@Embeddable` with `amount` and `currency` columns and a
 `toDomain()` that calls the `Money` constructor, so value-object validation
-re-runs on the way in.
+re-runs on the way in. `OrderLineColumns` is the same idea for `OrderLine`
+(`productSku`, `quantity`, an embedded `MoneyColumns unitPrice`; `of(OrderLine)`
+and `toDomain()`): an order line is a value object inside the aggregate, so it
+gets a collection table, never an `@Entity` of its own (`ddd-value-objects` Rule 7).
 
 ## 4. The implementation — `<bc>/infrastructure`, same name, Panache behind the interface (Rule 3)
 
@@ -146,10 +159,15 @@ public class OrderRepository implements com.example.orders.domain.OrderRepositor
 ```
 
 **Conflict surfacing (Rule 7):** `ConcurrencyConflictException` is a domain
-exception. The api layer maps it, and nothing else does:
+exception. The api layer maps it, and nothing else does. The mapper is the one
+`api` type that names a domain exception type (`ddd-foundations` placement
+table); the ArchUnit test in `references/architecture-tests.md` ignores exactly
+that dependency and no other api → domain edge:
 
 ```java
 // com.example.orders.api
+import com.example.orders.domain.ConcurrencyConflictException;   // the one domain import api is allowed
+
 public class ConflictMapper {
     @ServerExceptionMapper
     public RestResponse<ProblemDTO> onConflict(ConcurrencyConflictException e) {
@@ -173,7 +191,10 @@ void incrementThumbsUp(ThoughtId id);
 // thoughts/infrastructure — on the implementation (PanacheRepositoryBase<ThoughtRecord, UUID>):
 @Override
 public void incrementThumbsUp(ThoughtId id) {
-    update("thumbsUp = thumbsUp + 1 where id = ?1", id.value());   // one UPDATE, atomic under concurrency
+    update("thumbsUp = thumbsUp + 1, version = version + 1 where id = ?1", id.value());
+    // One UPDATE, atomic under concurrency. It advances the lock column itself, because a
+    // JPQL bulk update bypasses @Version: without "version = version + 1" a transaction that
+    // loaded the aggregate earlier could still merge successfully and overwrite thumbsUp.
 }
 ```
 
@@ -189,7 +210,8 @@ public void incrementThumbsUp(ThoughtId id) {
 - **Upsert (Rule 6):** `merge` + `flush` saves the whole aggregate in one call.
 - **Locking (Rule 7):** the mirror's `@Version` does the compare-and-set; the
   boundary surfaces a domain-neutral conflict → 409.
-- **Atomic op (Rule 8):** one `update(...)` behind a named method.
+- **Atomic op (Rule 8):** one `update(...)` behind a named method, bumping
+  `version` so the whole-aggregate path still rejects stale writers.
 - **Vernon query (Rules 9, 10):** `OrderPage`/`OrderSummary` are immutable
   domain records — not DTOs; `Page`/`Sort`/`PanacheQuery` never cross the
   interface.

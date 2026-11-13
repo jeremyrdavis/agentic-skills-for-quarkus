@@ -23,13 +23,18 @@ public OrderDTO cancel(OrderId id) {
 `events.fire(...)` runs inside the transaction. Nothing is delivered yet: CDI
 holds transactional observers until the phase they declared (Rule 6).
 
-## 2. In-process handler — `AFTER_SUCCESS`, own transaction
+## 2. In-process handler — `AFTER_SUCCESS`, own transaction, same bounded context
+
+A domain event is observed only inside the context that raised it (Rule 9);
+here a second aggregate of the orders context, `Reservation`, reacts. Another
+context never imports `orders.domain` — it consumes the integration event in
+section 4.
 
 ```java
-package com.example.inventory.infrastructure;
+package com.example.orders.infrastructure;
 
-import com.example.inventory.application.ReleaseReservationApplicationService;
-import com.example.orders.domain.OrderCancelledEvent;             // the published domain event type
+import com.example.orders.application.ReleaseReservationApplicationService;
+import com.example.orders.domain.OrderCancelledEvent;             // same bounded context
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.TransactionPhase;
@@ -42,14 +47,29 @@ public class OrderCancelledObserver {                            // inbound adap
     OrderCancelledObserver(ReleaseReservationApplicationService release) { this.release = release; }
 
     void on(@Observes(during = TransactionPhase.AFTER_SUCCESS) OrderCancelledEvent event) {
-        release.forOrder(event.orderId(), event.eventId());       // its own @Transactional use case (Rule 7)
+        release.forOrder(event.orderId(), event.eventId());       // its own transaction (Rule 7)
     }
 }
 ```
 
+```java
+// com.example.orders.application.ReleaseReservationApplicationService — the relevant lines
+@Transactional(Transactional.TxType.REQUIRES_NEW)                // not REQUIRED — see below
+public void forOrder(OrderId orderId, UUID eventId) {
+    if (handled.contains(eventId)) return;                       // idempotent (Rule 8)
+    Reservation reservation = reservations.findByOrder(orderId).orElseThrow(...);
+    reservation.release();                                       // the second aggregate, its own transaction
+    reservations.persist(reservation);
+    handled.record(eventId);
+}
+```
+
 The observer carries no `@Transactional` of its own: it is delivered after the
-publisher's commit and *calls an application service*, which opens the handler's
-transaction. The handler dedupes on `eventId` (Rule 8) — `AFTER_SUCCESS`
+publisher's commit and *calls an application service*, whose method opens the
+handler's transaction with `REQUIRES_NEW`. During `AFTER_SUCCESS` the completed
+publisher transaction is still associated with the thread, so a plain
+`@Transactional` (`REQUIRED`) would join that finished transaction instead of
+starting one. The handler dedupes on `eventId` (Rule 8) — `AFTER_SUCCESS`
 delivery is in-memory, so a crash between commit and observer loses the event
 unless the handler can be re-driven; use the outbox below when that matters.
 
@@ -65,7 +85,8 @@ package com.example.orders.infrastructure;
 public class OutboxRecord {
     @Id UUID id;                     // = eventId — the consumer's idempotency key
     String type;                     // "OrderCancelled", version in the payload
-    String payload;                  // integration-event JSON
+    @Column(columnDefinition = "text")
+    String payload;                  // integration-event JSON — never the default varchar(255)
     Instant occurredAt;              // when it happened — metadata, not the relay's ordering key
     long seq;                        // DB identity/sequence column — the relay orders on this
     Instant publishedAt;             // null until the relay sends it
@@ -103,8 +124,9 @@ public class OutboxRelay {
     @Transactional                                    // infrastructure job, not a use case — the one tolerated exception
     void relay() {
         for (OutboxRecord r : outbox.unpublished(100)) {   // "publishedAt is null order by seq"
-            orders.send(r.payload);                        // at-least-once: a crash here re-sends on the next tick
-            r.publishedAt = Instant.now();
+            orders.send(r.payload).toCompletableFuture().join();   // wait for the broker's ack: a failure throws,
+            r.publishedAt = Instant.now();                         // publishedAt rolls back, the next tick retries
+            // at-least-once: a crash after the ack and before commit re-sends the row — consumers dedupe on eventId
         }
     }
 }
@@ -132,9 +154,25 @@ public record OrderCancelledV1(UUID eventId, Instant occurredAt,
 
 Mapped from `OrderCancelledEvent` by `IntegrationEventMapper` in
 `infrastructure`. The domain event is free to change with the model; `V1` is
-not. A consumer in another bounded context deserializes `OrderCancelledV1`,
+not. The consumer in another bounded context deserializes `OrderCancelledV1`,
 dedupes on `eventId`, and calls *its* application service — it never imports
-`com.example.orders.domain`.
+`com.example.orders.domain`:
+
+```java
+package com.example.inventory.infrastructure;                     // the other context's inbound adapter
+
+@ApplicationScoped
+public class OrdersConsumer {
+    private final ReleaseStockApplicationService release;         // inventory's own use case, own @Transactional
+    OrdersConsumer(ReleaseStockApplicationService release) { this.release = release; }
+
+    @Incoming("orders")                                           // mp.messaging.incoming.orders.* in this service
+    @Blocking                                                     // the use case blocks on the database
+    public void on(OrderCancelledV1 event) {                      // Jackson deserializer for the contract type
+        release.forOrder(event.orderId(), event.eventId());       // dedupes on eventId inside
+    }
+}
+```
 
 ## What this demonstrates
 
@@ -143,11 +181,13 @@ dedupes on `eventId`, and calls *its* application service — it never imports
   must not be lost, and always across services. Neither relies on "publish
   after the call returns".
 - **Own transaction per handler (Rule 7):** the observer delegates to an
-  application service; the relay's `@Transactional` is infrastructure plumbing.
+  application service running `REQUIRES_NEW`; the relay's `@Transactional` is
+  infrastructure plumbing.
 - **Idempotent handlers (Rule 8):** `eventId` is the outbox key and the
   consumer's dedupe key; at-least-once is the assumption.
 - **Domain vs integration events (Rule 9):** the Kafka payload is `V1`, mapped
-  in `infrastructure`; the domain type never leaves the service.
+  in `infrastructure`; the domain type never leaves the service, and the other
+  context's consumer depends on the `V1` contract only.
 - **No broker in domain or application (Rule 10):** `Emitter` appears in one
   infrastructure class.
 
@@ -158,5 +198,8 @@ dedupes on `eventId`, and calls *its* application service — it never imports
   `@Transactional` on the application service.
 - Use `Emitter<String>` with a JSON payload, or a typed `Emitter<OrderCancelledV1>`
   with the Jackson serializer, never `Emitter<OrderCancelledEvent>`.
+- `Emitter.send` returns a `CompletionStage` that completes on the broker's
+  ack; the relay joins it before marking the row published, so a send failure
+  rolls `publishedAt` back and the row is retried.
 - Dev Services starts Kafka for `@QuarkusTest`; test the relay against it and the
   observers with an in-memory `InMemoryConnector` when the broker is noise.
