@@ -66,7 +66,8 @@ public class OutboxRecord {
     @Id UUID id;                     // = eventId — the consumer's idempotency key
     String type;                     // "OrderCancelled", version in the payload
     String payload;                  // integration-event JSON
-    Instant occurredAt;
+    Instant occurredAt;              // when it happened — metadata, not the relay's ordering key
+    long seq;                        // DB identity/sequence column — the relay orders on this
     Instant publishedAt;             // null until the relay sends it
     // constructors/factory elided
 }
@@ -101,7 +102,7 @@ public class OutboxRelay {
     @Scheduled(every = "1s")
     @Transactional                                    // infrastructure job, not a use case — the one tolerated exception
     void relay() {
-        for (OutboxRecord r : outbox.unpublished(100)) {   // "publishedAt is null order by occurredAt"
+        for (OutboxRecord r : outbox.unpublished(100)) {   // "publishedAt is null order by seq"
             orders.send(r.payload);                        // at-least-once: a crash here re-sends on the next tick
             r.publishedAt = Instant.now();
         }
@@ -137,9 +138,10 @@ dedupes on `eventId`, and calls *its* application service — it never imports
 
 ## What this demonstrates
 
-- **After-commit by mechanism (Rule 6):** `AFTER_SUCCESS` observers in-process;
-  outbox + relay across services. Neither relies on "publish after the call
-  returns".
+- **After-commit by mechanism (Rule 6):** `AFTER_SUCCESS` observers in-process
+  (right timing, best-effort — in-memory); outbox + relay wherever the event
+  must not be lost, and always across services. Neither relies on "publish
+  after the call returns".
 - **Own transaction per handler (Rule 7):** the observer delegates to an
   application service; the relay's `@Transactional` is infrastructure plumbing.
 - **Idempotent handlers (Rule 8):** `eventId` is the outbox key and the
