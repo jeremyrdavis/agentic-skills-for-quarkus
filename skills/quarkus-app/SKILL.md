@@ -7,6 +7,9 @@ description: >
   are generated using the latest official Quarkus platform version, proper tooling (CLI preferred, Maven plugin as
   fallback), and official platform or Quarkiverse extensions only. Trigger even for casual phrasing like "spin up
   a Quarkus app", "start a new Quarkus service", "create a Quarkus REST API", or "add a Quarkus extension".
+  Does not cover DDD modeling (bounded contexts, aggregates, value objects, repositories, application services);
+  use the ddd-* skills together with quarkus-ddd for that. This skill only supplies the project, the platform
+  version, and the extensions.
 ---
 
 # Quarkus App Skill
@@ -220,6 +223,18 @@ quarkus create app io.arrogantprogrammer:event-service:1.0.0-SNAPSHOT \
   --no-code \
   -x=messaging-kafka,rest-jackson
 ```
+
+### DDD-shaped service (pairs with the `ddd-*` skills and `quarkus-ddd`)
+
+```bash
+quarkus create app io.arrogantprogrammer:orders-service:1.0.0-SNAPSHOT \
+  --no-code \
+  -x=rest-jackson,hibernate-orm-panache,jdbc-postgresql
+```
+
+Add `messaging-kafka,scheduler` when domain events leave the service (outbox relay). After creation, hand
+over to `ddd-foundations` for the package layout and to `quarkus-ddd` for the Quarkus mechanics; this skill
+does not generate domain code.
 
 ---
 

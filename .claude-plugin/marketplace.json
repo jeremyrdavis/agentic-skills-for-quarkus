@@ -1,0 +1,14 @@
+{
+  "name": "agentic-skills-for-quarkus",
+  "description": "Quarkus skills for Claude Code: project scaffolding (quarkus-app) and the Quarkus mechanics tier for the ddd-skills plugin (quarkus-ddd).",
+  "owner": {
+    "name": "jeremyrdavis"
+  },
+  "plugins": [
+    {
+      "name": "quarkus-skills",
+      "source": "./",
+      "description": "Quarkus skills: quarkus-app (create and maintain Quarkus projects) and quarkus-ddd (Quarkus mechanics for the ddd-skills plugin)."
+    }
+  ]
+}
