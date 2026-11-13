@@ -31,13 +31,13 @@ It defines no DDD concepts of its own. Its `references/` directory holds the Qua
 
 Use **alongside** the `tdd-*` skills when writing or running tests in a Quarkus project. `tdd-test-list` decides what goes on the test list and in what order; `tdd-cycle` decides when a test is red, what green may change, when to refactor and commit. `quarkus-tdd` supplies the Quarkus side:
 
-- the test tier per `ddd-foundations` layer — plain JUnit 5 for `domain`, `@QuarkusTest` with Dev Services for `application` and `api` — and what "all previous tests pass" costs per tier;
+- which tests run on the plain JVM and which need `@QuarkusTest` with Dev Services, and what "all previous tests pass" costs per tier;
 - the runner: `quarkus test` continuous testing during the loop, `./mvnw verify -DskipITs=false` before a PR;
 - the first red as a `javac` error and the stub convention (`throw new UnsupportedOperationException()`);
 - where the `[TEST]` list lives and how test classes and methods are named;
 - `@InjectMock` versus `QuarkusMock`, REST Assured, `@TestTransaction`, the `*IT extends *Test` companion, and what never to mock.
 
-It defines no TDD rule of its own. Its `references/` directory holds `tdd-cycle.md` (one worked loop on the canonical `Order`) and `testing.md` (the test tooling, absorbed from the earlier standalone `quarkus-testing` skill).
+It defines no TDD rule of its own. Its `references/` directory holds `tdd-cycle.md` (one worked loop adding `cancel()` to an `Order`) and `testing.md` (the test tooling, absorbed from the earlier standalone `quarkus-testing` skill).
 
 ## Install
 
@@ -75,7 +75,7 @@ cp -r agentic-skills-for-quarkus/skills/* <your-project>/.claude/skills/
 
 ## How the skills work together
 
-For a new service: `quarkus-app` creates the project and adds `rest-jackson, hibernate-orm-panache, jdbc-postgresql` (plus `messaging-kafka, scheduler` if events leave the service). Then the `ddd-*` skill for the concern at hand loads (for example `ddd-aggregates` for a new aggregate), `quarkus-ddd` loads with it, and the assistant reads the one Quarkus reference file for that concern. With the `tdd-*` skills installed, `tdd-test-list` writes the `[TEST]` list first, `tdd-cycle` runs the loop, and `quarkus-tdd` says which tier each test is in and what to run at each step. Precedence: `tdd-cycle` governs the sequence; the `ddd-*` skills constrain the interface each test invokes and the layering; `quarkus-ddd` and `quarkus-tdd` supply mechanics.
+For a new service: `quarkus-app` creates the project and adds `rest-jackson, hibernate-orm-panache, jdbc-postgresql` (plus `messaging-kafka, scheduler` if events leave the service). Then the `ddd-*` skill for the concern at hand loads (for example `ddd-aggregates` for a new aggregate), `quarkus-ddd` loads with it, and the assistant reads the one Quarkus reference file for that concern. With the `tdd-*` skills installed, `tdd-test-list` writes the `[TEST]` list first, `tdd-cycle` runs the loop, and `quarkus-tdd` says which tests need the container and what to run at each step — the same loop whatever architecture the project follows, DDD or not.
 
 Example prompts:
 

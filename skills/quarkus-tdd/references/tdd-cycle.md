@@ -3,8 +3,8 @@
 Load this file when running the `tdd-cycle` loop in a Quarkus project for the
 first time, or when a cycle has gone wrong (a test passed without red, a tier
 was run at the wrong time). The rules are `tdd-test-list` and `tdd-cycle`;
-comments cite their numbers. The aggregate is the canonical `Order` from
-`ddd-aggregates/references/canonical-example-java.md`, shown here as if
+comments cite their numbers. The class under test is a plain `Order` with a
+status, a factory `place(...)`, and `markFulfilled()`, shown here as if
 `cancel()` were being added for the first time.
 
 Setup: `quarkus test` is running in a second terminal (mechanic 2). Mode is
@@ -17,7 +17,7 @@ Behavior only, ZOMBIES walked, simplest forcing case first, exceptions last.
 It lives at the bottom of the test class and shrinks as tests are written.
 
 ```java
-package com.example.orders.domain;                    // domain tier: plain JUnit (mechanic 1)
+package com.example.orders.domain;                    // plain-JVM tier (mechanic 1)
 
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.*;
@@ -75,7 +75,7 @@ before the assertion. Run: red. ✔ Second step of the red (Rule 5).
     }
 ```
 
-**Predict:** passes; every earlier `OrderTest` passes (domain tier, every
+**Predict:** passes; every earlier `OrderTest` passes (plain-JVM tier, every
 step — mechanic 2). Run: green.
 
 **Simplify (Rule 9):** one line, required by the failing test. Nothing to
@@ -107,9 +107,8 @@ it goes first and the list is reordered, not skipped.
     }
 ```
 
-Interface decision made in the test, constrained by `ddd-aggregates` Rule 7
-(invariants enforced by the transition method, violation as a domain
-exception) — `tdd-cycle` Rule 11.
+Interface decision made in the test — the refusal is an exception thrown by
+`cancel()`, the project's convention for a rule violation — `tdd-cycle` Rule 11.
 
 **Predict:** compile failure — the exception class doesn't exist. Add it:
 
@@ -173,9 +172,9 @@ The commit message carries the record so the drift is visible in the history.
 ## 4. Fourth cycle — the application tier, `@QuarkusTest`
 
 `[TEST] Cancelling an order through the use case persists the cancelled state`
-exercises `CancelOrderApplicationService` and the repository, so it is
-`application` tier (mechanic 1): `@QuarkusTest`, Dev Services PostgreSQL, the
-real Panache repository, `@TestTransaction` (mechanic 9). It runs at this
+exercises `CancelOrderApplicationService` and the repository, which need the
+container (mechanic 1): `@QuarkusTest`, Dev Services PostgreSQL, the real
+Panache repository, `@TestTransaction` (mechanic 9). It runs at this
 green and after refactorings, not at every step (mechanic 2).
 
 ```java
@@ -216,7 +215,7 @@ Same loop: `javac` red (`CancelOrderApplicationService.cancel` doesn't exist),
 stub throws, assertion red, then the simplest green —
 
 ```java
-    @Transactional                                                 // quarkus-ddd mechanic 1
+    @Transactional                                                 // the use case owns the transaction
     public OrderDTO cancel(OrderId id) {
         Order order = orders.findById(id).orElseThrow();           // the not-found case is a later list item
         order.cancel();
@@ -244,7 +243,7 @@ order and fulfil or cancel it. That is the third repetition, not the first:
 🧹 extract fulfilledOrder() beside placedOrder() in OrderTest; no production change
 ```
 
-Run (domain tier) → green. `git commit -am "refactor: fulfilledOrder() test factory"`.
+Run (plain-JVM tier) → green. `git commit -am "refactor: fulfilledOrder() test factory"`.
 Nothing further: the next item is easy to write.
 
 ## 6. Closing — `tdd-test-list` Rule 9
@@ -255,7 +254,7 @@ without red, and say so). Then done.
 
 ## What this demonstrates
 
-- **Tiers and cost (mechanics 1–2):** domain-tier cycles ran the suite at
+- **Tiers and cost (mechanics 1–2):** plain-JVM cycles ran the suite at
   every step; the `@QuarkusTest` ran at its own green.
 - **Two-step red in Java (mechanic 3; `tdd-cycle` Rule 5):** `javac` first,
   stub throwing `UnsupportedOperationException`, then the assertion.
@@ -265,7 +264,7 @@ without red, and say so). Then done.
   cycle 2, shrinking at every green, appended at the end.
 - **Passed without red is a stop (Rule 6):** named, recorded in the commit,
   traced to a simplify step that was skipped.
-- **Interface decisions in the test, constrained by `ddd-aggregates` (Rule 11):**
+- **Interface decisions in the test (Rule 11):**
   the exception type and the transition method; the implementation behind
   them grew one guard at a time.
 - **Commits at green and after refactoring (Rule 12; mechanic 12).**

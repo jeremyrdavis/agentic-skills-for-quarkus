@@ -10,10 +10,9 @@ anything here.
 are not testing — you are scaffolding. A class named `XTest` that mocks `X`
 asserts only what Mockito returned; the rules inside `X` go untested. Mock
 *collaborators* (another application service, an external client, a clock);
-never the class the test is named after, never an aggregate, never a value
-object.
+never the class the test is named after, never a plain domain object.
 
-## 1. Resource test — `api` tier, `@InjectMock` on the application service
+## 1. Resource test — HTTP tier, `@InjectMock` on the service behind the resource
 
 The resource's job is request parsing, status codes, and the exception mapper.
 The use case behind it has its own tests; here it is a collaborator, so it is
@@ -97,12 +96,11 @@ separate process); an IT companion of a test that mocks a bean exercises the
 real bean instead, so keep such ITs to tests whose stubs are inessential, or
 give the IT its own `@TestProfile`.
 
-## 3. Repository test — `application` tier, real Dev Services PostgreSQL
+## 3. Repository test — container tier, real Dev Services PostgreSQL
 
 The mapping, the lock column, and the atomic update are what this tier is
-for, so nothing is mocked. The test injects the **domain interface**; CDI
-resolves it to the Panache implementation in `infrastructure`
-(`quarkus-ddd` mechanic 4).
+for, so nothing is mocked. The test injects the repository **interface**; CDI
+resolves it to the Panache implementation.
 
 ```java
 package com.example.orders.infrastructure;
@@ -224,7 +222,7 @@ to `@InjectMock`.
 | `@InjectMock CancelOrderApplicationService cancelOrder;` *and* `QuarkusMock.installMockForType(mock, CancelOrderApplicationService.class)` for the same bean | Two mechanisms install one mock; one always wins and the other is dead code that misleads the next reader. | Pick `@InjectMock`, stub in `@BeforeEach`, delete the `installMockForType` line (mechanic 6). |
 | Per-test `installMockForInstance` to vary return values by argument | That is per-call stubbing, which `Mockito.when(...)` in `@BeforeEach` already does. | `@InjectMock`; reserve `installMockForInstance` for a wholesale instance swap such as a `Clock`. |
 | `@QuarkusTest class CancelOrderApplicationServiceTest` with `@InjectMock CancelOrderApplicationService` | The test is named after the class it mocks; it asserts its own stubs. | Exercise the real service against Dev Services or a hand-rolled in-memory repository fake (mechanic 7). |
-| Mocking `Order`, `Money`, or `OrderLine` | The invariants in the aggregate are the thing under test; a mock bypasses them. | Real instances through `Order.place(...)` (mechanic 7). |
+| Mocking `Order`, `Money`, or `OrderLine` | The rules inside the object are the thing under test; a mock bypasses them. | Real instances through `Order.place(...)` (mechanic 7). |
 | `CancelOrderApplicationService mockRepository = Mockito.mock(...)` | The variable name contradicts the type; the layer confusion the names exist to prevent. | Name the variable after the type: `cancelOrder`. |
 | Test hits `/api/orders` while the resource declares `@Path("/orders")` | The test asserts a route that doesn't exist; its failure is uninformative. | Match the resource's `@Path` (mechanic 8). |
 | A `@QuarkusTest` asserting that a field was persisted by Hibernate or serialized by Jackson | Tests the framework, not your code. | Assert the behavior your service exposes (mechanic 11). |
@@ -239,10 +237,10 @@ to `@InjectMock`.
 | "A senior reviewer told me to use both `@InjectMock` and `QuarkusMock.installMockForType` — that's authority." | Cargo-culted defenses against an unspecified race aren't authority; they're folklore. If a CDI race exists, name it and file the bug. Otherwise: one source of truth per mock. |
 | "Belt-and-braces never hurts — install the mock both ways." | They install the same mock through different mechanisms. One always wins; the other is dead code the next author has to decode. Tests are read more than written. |
 | "The dynamic-mocking example shows three test methods with different behaviors, so my three-argument-cases scenario fits it." | That example swaps a *whole instance* (a different `Clock`). Different return or throw values per argument is `Mockito.when(...)` in `@BeforeEach`. If the per-test mock has `when(...)` calls keyed on arguments, it is the wrong tool. |
-| "The `@QuarkusTest` just verifies the wiring; the real rules get pure-JUnit tests later." | "Later" codifies the absence. A `@QuarkusTest` named `XTest` that mocks `X` is a tautology, and the rules in `X` stay untested until someone notices in production. If the rules deserve unit tests, write them now, in the domain tier, as the next list item. |
+| "The `@QuarkusTest` just verifies the wiring; the real rules get pure-JUnit tests later." | "Later" codifies the absence. A `@QuarkusTest` named `XTest` that mocks `X` is a tautology, and the rules in `X` stay untested until someone notices in production. If the rules deserve unit tests, write them now, on the plain JVM, as the next list item. |
 
 ---
 
 Absorbed from the earlier standalone `quarkus-testing` skill
-(jeremyrdavis/quarkus-skill-testing), updated to the `ddd-foundations` layout
+(jeremyrdavis/quarkus-skill-testing), updated to the current package layout
 and the `tdd-*` loop.
