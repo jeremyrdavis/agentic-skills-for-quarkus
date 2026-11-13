@@ -1,92 +1,93 @@
 # agentic-skills-for-quarkus
 
-GitHub Copilot and Claude Code skills for building Quarkus applications.
+Claude Code skills for building Quarkus applications.
 
-This repository provides a small set of focused skills that help an AI assistant guide you through two common kinds of work:
+Two skills, two jobs:
 
-- **Bootstrapping Quarkus applications** with the right platform, extensions, and runtime choices.
-- **Scaffolding DDD and Hexagonal Architecture components** inside Quarkus projects.
-
-Each skill is designed to work as an agent instruction set. You ask for a task in natural language, the assistant loads the relevant skill, gathers the required details, and then generates the appropriate project structure, code, or configuration.
+- **`quarkus-app`** — bootstrap and maintain a Quarkus project: platform version, build tool, extensions, Red Hat Build of Quarkus.
+- **`quarkus-ddd`** — the Quarkus mechanics tier under the [`ddd-*` skills](https://github.com/jeremyrdavis/agentic-skills-for-ddd): how Quarkus realizes the decisions those skills make.
 
 ## Available skills
 
 ### `quarkus-app`
-Use this skill when you want to create or maintain a Quarkus application.
 
-It helps with:
-- Creating a new Quarkus project
-- Choosing the build tool and Java version
-- Adding or updating extensions
-- Keeping versions aligned with the latest Quarkus platform
-- Supporting Red Hat Build of Quarkus when needed
+Use when creating or maintaining a Quarkus application. It covers creating a new project, choosing the build tool and Java version, adding or updating extensions, keeping versions aligned with the latest platform, and RHBQ. It does not generate domain code.
 
 ### `quarkus-ddd`
-Use this skill when you want to model a new bounded context or add DDD tactical patterns to a Quarkus application.
 
-It helps with:
-- Bounded contexts and subdomains
-- Aggregates and value objects
-- Commands, domain events, and result records
-- Application services
-- REST endpoints and DTOs
-- Persistence entities and repositories
-- Hexagonal Architecture / Ports and Adapters structure
+Use **alongside** the `ddd-*` skills when implementing DDD patterns in a Quarkus project. The DDD skills decide the layers, the aggregate shape, the repository contract, who owns the transaction, and when events are delivered. `quarkus-ddd` supplies the Quarkus side of each decision:
 
-## Repository structure
+- package layout mirroring the four `ddd-foundations` layers, enforced by an ArchUnit test;
+- the extension bundle for a DDD-shaped service;
+- `@Transactional` on application-service methods and nowhere else;
+- Panache repositories implemented on the infrastructure class behind the hand-written domain interface; `@Version` compare-and-set and its mapping to 409;
+- after-commit event delivery with CDI `TransactionPhase` observers, and a transactional outbox to Kafka for events that leave the service;
+- test tiers: plain JUnit for `domain`, `@QuarkusTest` with Dev Services for `application` and `api`.
 
-- `skills/quarkus-app/` — Quarkus application scaffolding and maintenance guidance
-- `skills/quarkus-ddd/` — DDD and Hexagonal Architecture scaffolding guidance
+It defines no DDD concepts of its own. Its `references/` directory holds the Quarkus worked examples that the `ddd-*` skills point to: `foundations.md`, `services.md`, `persistence.md`, `domain-events.md`, `architecture-tests.md`.
 
-## How to use these skills with Claude
+## Install
 
-This repository is primarily intended for **Claude Code** skill installation.
+There is no `claude mcp add-skill` command. Use one of the following.
 
-### Install from GitHub
+### Plugin, per project (recommended)
+
+Install into each Quarkus project rather than user-wide, so the descriptions are only in context where they apply. `quarkus-ddd` needs the `ddd-skills` plugin installed in the same project.
 
 ```bash
-claude mcp add-skill https://github.com/jeremyrdavis/agentic-skills-for-quarkus/tree/main/skills/quarkus-app
-claude mcp add-skill https://github.com/jeremyrdavis/agentic-skills-for-quarkus/tree/main/skills/quarkus-ddd
+claude plugin marketplace add jeremyrdavis/agentic-skills-for-ddd
+claude plugin marketplace add jeremyrdavis/agentic-skills-for-quarkus
+cd <your-quarkus-project>
+claude plugin install ddd-skills@agentic-skills-for-ddd --scope project
+claude plugin install quarkus-skills@agentic-skills-for-quarkus --scope project
 ```
 
-### Install from a local clone
+One-step form from inside a Claude Code session:
+
+```
+/plugin install quarkus-skills --marketplace jeremyrdavis/agentic-skills-for-quarkus
+```
+
+A Quarkus project that doesn't use DDD can install `quarkus-skills` alone; it carries the unused `quarkus-ddd` description, which costs a few hundred tokens per session and nothing else.
+
+### Copy, per project (no manifests)
 
 ```bash
 git clone https://github.com/jeremyrdavis/agentic-skills-for-quarkus.git
-claude mcp add-skill ./agentic-skills-for-quarkus/skills/quarkus-app
-claude mcp add-skill ./agentic-skills-for-quarkus/skills/quarkus-ddd
+mkdir -p <your-project>/.claude/skills
+cp -r agentic-skills-for-quarkus/skills/* <your-project>/.claude/skills/
 ```
 
-### Example prompts
+## How the skills work together
 
-- “Create a new Quarkus REST API with PostgreSQL persistence.”
-- “Add Kafka messaging and health checks to my Quarkus app.”
-- “Create an orders bounded context with an Order aggregate and value objects for line items.”
-- “Add a new aggregate to the catalog subdomain.”
+For a new service: `quarkus-app` creates the project and adds `rest-jackson, hibernate-orm-panache, jdbc-postgresql` (plus `messaging-kafka, scheduler` if events leave the service). Then the `ddd-*` skill for the concern at hand loads (for example `ddd-aggregates` for a new aggregate), `quarkus-ddd` loads with it, and the assistant reads the one Quarkus reference file for that concern.
 
-Claude will load the matching skill and use its instructions to gather the right inputs before generating code.
+Example prompts:
 
-## How to use these skills with Codex
+- "Create a new Quarkus REST API with PostgreSQL persistence." → `quarkus-app`
+- "Create an orders bounded context with an `Order` aggregate." → `ddd-foundations`, `ddd-aggregates`, `quarkus-ddd`
+- "Add a repository for `Order` with optimistic locking." → `ddd-persistence`, `quarkus-ddd`
+- "Publish `OrderCancelledEvent` to Kafka." → `ddd-domain-events`, `quarkus-ddd`
 
-Codex can use the same skill content as guidance for generating or modifying code in this repository or in your Quarkus projects.
+## Using the skills with Codex
 
-### Typical workflow
+Codex can use the same files as guidance. Point it at the repository or copy the relevant `skills/*/SKILL.md` into its context. For DDD work, give it the matching `ddd-*` skill as well; `quarkus-ddd` on its own is deliberately incomplete.
 
-1. Point Codex at the repository or copy the relevant skill into your working context.
-2. Ask for the task you want done in natural language.
-3. Let Codex follow the skill instructions to gather missing details, decide on structure, and produce the output.
+## Repository structure
 
-### Example prompts
-
-- “Use the Quarkus app skill to scaffold a new service with REST and PostgreSQL.”
-- “Use the DDD skill to add a new payments bounded context.”
-- “Follow the repo’s Quarkus DDD conventions and generate the aggregate, command, event, service, and endpoint.”
-
-### Notes for Codex users
-
-- The skills are written as reusable instructions, so Codex can treat them as a playbook for Quarkus work.
-- If you are editing this repository, keep new skills aligned with the existing folder layout under `skills/`.
-- When a task involves both application bootstrap and DDD modeling, use `quarkus-app` first, then `quarkus-ddd`.
+```text
+.
+├── .claude-plugin/
+│   ├── plugin.json
+│   └── marketplace.json
+└── skills/
+    ├── quarkus-app/
+    │   ├── SKILL.md
+    │   └── references/            (extensions.md, rhbq.md)
+    └── quarkus-ddd/
+        ├── SKILL.md
+        └── references/            (foundations, services, persistence, domain-events, architecture-tests)
+```
 
 ## Prerequisites
 
@@ -97,4 +98,4 @@ Codex can use the same skill content as guidance for generating or modifying cod
 
 ## Contributing
 
-If you add new skills, keep them focused, well-documented, and consistent with the existing naming and directory conventions.
+Keep `quarkus-app` about the project and `quarkus-ddd` about mechanics. If a change to `quarkus-ddd` would redefine a DDD concept, it belongs in the `ddd-*` repository instead. The `references/*.md` files cite `ddd-skills` Core Rule numbers; they are written against `ddd-skills 1.x`.

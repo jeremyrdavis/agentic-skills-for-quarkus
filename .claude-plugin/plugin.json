@@ -1,0 +1,9 @@
+{
+  "name": "quarkus-skills",
+  "description": "Quarkus skills: quarkus-app (create and maintain Quarkus projects) and quarkus-ddd (Quarkus mechanics for the ddd-skills plugin).",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "author": {
+    "name": "jeremyrdavis"
+  }
+}
