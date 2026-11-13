@@ -141,5 +141,6 @@ is actually an application service — move and rename it.
   the application service tests wire fakes for `OrderRepository` and the event
   publisher, or run under `@QuarkusTest` with Dev Services PostgreSQL and the
   real Panache-backed repository (`references/persistence.md`).
+- The tier split above, the runner, and test doubles are `quarkus-tdd`'s (`references/testing.md` there); this file only fixes which layer each class is in.
 - Events: past tense, `*Event` suffix (`OrderRefundedEvent`), per
   `ddd-foundations` and `ddd-domain-events`.

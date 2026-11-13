@@ -203,3 +203,4 @@ public class OrdersConsumer {
   rolls `publishedAt` back and the row is retried.
 - Dev Services starts Kafka for `@QuarkusTest`; test the relay against it and the
   observers with an in-memory `InMemoryConnector` when the broker is noise.
+- The tier split above, the runner, and test doubles are `quarkus-tdd`'s (`references/testing.md` there); this file only fixes which layer each class is in.

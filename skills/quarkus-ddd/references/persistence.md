@@ -229,3 +229,4 @@ public void incrementThumbsUp(ThoughtId id) {
 - Repository tests split: contract tests against an in-memory fake for callers;
   `@QuarkusTest` with Dev Services PostgreSQL for the mapping, the lock, and
   the atomic update.
+- The tier split above, the runner, and test doubles are `quarkus-tdd`'s (`references/testing.md` there); this file only fixes which layer each class is in.
