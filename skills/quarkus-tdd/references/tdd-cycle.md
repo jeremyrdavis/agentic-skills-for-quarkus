@@ -82,8 +82,14 @@ step — mechanic 2). Run: green.
 delete. **Refactor (Rule 10):** `🧹 none` — the next test is easy to write.
 
 ```
-git commit -am "feat: cancelling a placed order marks it cancelled"
+git commit -m "feat: cancelling a placed order marks it cancelled" -- \
+    src/test/java/com/example/orders/domain/OrderTest.java \
+    src/main/java/com/example/orders/domain/Order.java
 ```
+
+Only this cycle's files are committed (`tdd-cycle` Rule 12; mechanic 12);
+anything else in the working tree stays as it was. The later commits below
+name their files the same way, abbreviated to `-- <this cycle's files>`.
 
 Delete the first `[TEST]` line (mechanic 4).
 
@@ -140,7 +146,7 @@ require `!= PLACED`?" — the failing test only requires *fulfilled* to be
 refused. This is the moment to write `== FULFILLED`. The example keeps the
 broader guard deliberately, to show what happens next.
 
-`🧹 none`. `git commit -am "feat: cancelling a fulfilled order is refused"`.
+`🧹 none`. `git commit -m "feat: cancelling a fulfilled order is refused" -- <this cycle's files>`.
 
 ## 3. Third cycle — a test that passes without red (`tdd-cycle` Rule 6)
 
@@ -156,7 +162,8 @@ broader guard deliberately, to show what happens next.
 ```
 
 **Predict:** assertion failure — nothing has been written for this case.
-Run: **green.** Stop.
+Run: **green.** Stop and find the cause. Not a "still works" item, and no
+earlier test forced a generalization — so:
 
 > passed without red: the `status != Status.PLACED` guard added in cycle 2
 > covered the cancelled case before this test required it. Rule 9 should have
@@ -164,7 +171,7 @@ Run: **green.** Stop.
 > tightening simplify on the remaining items.
 
 ```
-git commit -am "test: cancelling a cancelled order is refused (passed without red: cycle-2 guard was broader than its test)"
+git commit -m "test: cancelling a cancelled order is refused (passed without red: cycle-2 guard was broader than its test)" -- <this cycle's files>
 ```
 
 The commit message carries the record so the drift is visible in the history.
@@ -231,7 +238,7 @@ not written until its test is red — writing `pullPendingEvents().forEach(event
 now would make that test pass without red.
 
 ```
-git commit -am "feat: cancelling an order through the use case persists the cancelled state"
+git commit -m "feat: cancelling an order through the use case persists the cancelled state" -- <this cycle's files>
 ```
 
 ## 5. Refactoring with its own hat — `tdd-cycle` Rule 10
@@ -243,7 +250,7 @@ order and fulfil or cancel it. That is the third repetition, not the first:
 🧹 extract fulfilledOrder() beside placedOrder() in OrderTest; no production change
 ```
 
-Run (plain-JVM tier) → green. `git commit -am "refactor: fulfilledOrder() test factory"`.
+Run (plain-JVM tier) → green. `git commit -m "refactor: fulfilledOrder() test factory" -- OrderTest.java`.
 Nothing further: the next item is easy to write.
 
 ## 6. Closing — `tdd-test-list` Rule 9

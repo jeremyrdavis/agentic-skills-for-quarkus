@@ -50,7 +50,7 @@ The Quarkus tier under the `tdd-*` skills. `tdd-test-list` decides what goes on 
 9. **Repository tests use Dev Services and `@TestTransaction`.** Real PostgreSQL, rolled back per test. Inject the domain interface, not the Panache class. Never a manual Testcontainer beside Dev Services.
 10. **Every `@QuarkusTest` class gets an `*IT extends *Test` companion** so the packaged artifact runs the same suite. Know whether the project sets `<skipITs>true</skipITs>`.
 11. **Don't test the framework.** No test that Hibernate persists a field, Jackson serializes a record, or CDI injects a bean. The mapping, the lock, and the atomic update are yours and get tests; the ORM is not.
-12. **Commits follow `tdd-cycle` Rule 12 with `git`**: at green, `feat:`/`fix:` naming the behavior; after refactoring, `refactor:` naming the move. In human mode the red step is `test: <behavior>` with the failing test alone, so the history shows the test came first.
+12. **Commits follow `tdd-cycle` Rule 12 with `git`**: at green, `feat:`/`fix:` naming the behavior; after refactoring, `refactor:` naming the move. Commit the cycle's files by path (`git commit -m "..." -- <paths>`), never `-a`, so unrelated changes in the tree are left alone. In human mode the red step is `test: <behavior>` with the failing test alone, so the history shows the test came first.
 
 ---
 
