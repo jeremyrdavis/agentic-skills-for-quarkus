@@ -1,6 +1,6 @@
 {
   "name": "quarkus-skills",
-  "description": "Quarkus skills: quarkus-app (create and maintain Quarkus projects) and quarkus-ddd (Quarkus mechanics for the ddd-skills plugin).",
+  "description": "Quarkus skills: quarkus-app (create and maintain Quarkus projects), quarkus-ddd (Quarkus mechanics for the ddd-skills plugin), and quarkus-tdd (Quarkus test mechanics for the tdd-skills plugin).",
   "version": "1.0.0",
   "license": "Apache-2.0",
   "author": {

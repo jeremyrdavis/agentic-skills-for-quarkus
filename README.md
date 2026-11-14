@@ -2,10 +2,11 @@
 
 Claude Code skills for building Quarkus applications.
 
-Two skills, two jobs:
+Three skills, three jobs:
 
 - **`quarkus-app`** — bootstrap and maintain a Quarkus project: platform version, build tool, extensions, Red Hat Build of Quarkus.
 - **`quarkus-ddd`** — the Quarkus mechanics tier under the [`ddd-*` skills](https://github.com/jeremyrdavis/agentic-skills-for-ddd): how Quarkus realizes the decisions those skills make.
+- **`quarkus-tdd`** — the Quarkus mechanics tier under the [`tdd-*` skills](https://github.com/jeremyrdavis/agentic-skills-for-tdd): how Quarkus runs the red–green–refactor loop.
 
 ## Available skills
 
@@ -26,19 +27,33 @@ Use **alongside** the `ddd-*` skills when implementing DDD patterns in a Quarkus
 
 It defines no DDD concepts of its own. Its `references/` directory holds the Quarkus worked examples that the `ddd-*` skills point to: `foundations.md`, `services.md`, `persistence.md`, `domain-events.md`, `architecture-tests.md`.
 
+### `quarkus-tdd`
+
+Use **alongside** the `tdd-*` skills when writing or running tests in a Quarkus project. `tdd-test-list` decides what goes on the test list and in what order; `tdd-cycle` decides when a test is red, what green may change, when to refactor and commit. `quarkus-tdd` supplies the Quarkus side:
+
+- which tests run on the plain JVM and which need `@QuarkusTest` with Dev Services, and what "all previous tests pass" costs per tier;
+- the runner: `quarkus test` continuous testing during the loop; `./mvnw verify -DskipITs=false` or `./gradlew build quarkusIntTest` before a PR;
+- the first red as a `javac` error and the stub convention (`throw new UnsupportedOperationException()`);
+- where the `[TEST]` list lives and how test classes and methods are named;
+- `@InjectMock` versus `QuarkusMock`, REST Assured, `@TestTransaction`, the `*IT extends *Test` companion for black-box tests, and what never to mock.
+
+It defines no TDD rule of its own. Its `references/` directory holds `tdd-cycle.md` (one worked loop adding `cancel()` to an `Order`) and `testing.md` (the test tooling, absorbed from the earlier standalone `quarkus-testing` skill).
+
 ## Install
 
 There is no `claude mcp add-skill` command. Use one of the following.
 
 ### Plugin, per project (recommended)
 
-Install into each Quarkus project rather than user-wide, so the descriptions are only in context where they apply. `quarkus-ddd` needs the `ddd-skills` plugin installed in the same project.
+Install into each Quarkus project rather than user-wide, so the descriptions are only in context where they apply. `quarkus-ddd` needs the `ddd-skills` plugin installed in the same project; `quarkus-tdd` needs `tdd-skills`.
 
 ```bash
 claude plugin marketplace add jeremyrdavis/agentic-skills-for-ddd
+claude plugin marketplace add jeremyrdavis/agentic-skills-for-tdd
 claude plugin marketplace add jeremyrdavis/agentic-skills-for-quarkus
 cd <your-quarkus-project>
 claude plugin install ddd-skills@agentic-skills-for-ddd --scope project
+claude plugin install tdd-skills@agentic-skills-for-tdd --scope project
 claude plugin install quarkus-skills@agentic-skills-for-quarkus --scope project
 ```
 
@@ -48,7 +63,7 @@ One-step form from inside a Claude Code session:
 /plugin install quarkus-skills --marketplace jeremyrdavis/agentic-skills-for-quarkus
 ```
 
-A Quarkus project that doesn't use DDD can install `quarkus-skills` alone; it carries the unused `quarkus-ddd` description, which costs a few hundred tokens per session and nothing else.
+A Quarkus project that doesn't use DDD or TDD can install `quarkus-skills` alone; it carries the unused `quarkus-ddd` and `quarkus-tdd` descriptions, which cost a few hundred tokens per session each and nothing else.
 
 ### Copy, per project (no manifests)
 
@@ -60,7 +75,7 @@ cp -r agentic-skills-for-quarkus/skills/* <your-project>/.claude/skills/
 
 ## How the skills work together
 
-For a new service: `quarkus-app` creates the project and adds `rest-jackson, hibernate-orm-panache, jdbc-postgresql` (plus `messaging-kafka, scheduler` if events leave the service). Then the `ddd-*` skill for the concern at hand loads (for example `ddd-aggregates` for a new aggregate), `quarkus-ddd` loads with it, and the assistant reads the one Quarkus reference file for that concern.
+For a new service: `quarkus-app` creates the project and adds `rest-jackson, hibernate-orm-panache, jdbc-postgresql` (plus `messaging-kafka, scheduler` if events leave the service). Then the `ddd-*` skill for the concern at hand loads (for example `ddd-aggregates` for a new aggregate), `quarkus-ddd` loads with it, and the assistant reads the one Quarkus reference file for that concern. With the `tdd-*` skills installed, `tdd-test-list` writes the `[TEST]` list first, `tdd-cycle` runs the loop, and `quarkus-tdd` says which tests need the container and what to run at each step — the same loop whatever architecture the project follows, DDD or not.
 
 Example prompts:
 
@@ -68,10 +83,12 @@ Example prompts:
 - "Create an orders bounded context with an `Order` aggregate." → `ddd-foundations`, `ddd-aggregates`, `quarkus-ddd`
 - "Add a repository for `Order` with optimistic locking." → `ddd-persistence`, `quarkus-ddd`
 - "Publish `OrderCancelledEvent` to Kafka." → `ddd-domain-events`, `quarkus-ddd`
+- "Add `cancel` to `Order`, test-first." → `tdd-test-list`, `tdd-cycle`, `ddd-aggregates`, `quarkus-ddd`, `quarkus-tdd`
+- "Write a `@QuarkusTest` for the orders resource." → `quarkus-tdd` (and `tdd-cycle` if the resource is being built)
 
 ## Using the skills with Codex
 
-Codex can use the same files as guidance. Point it at the repository or copy the relevant `skills/*/SKILL.md` into its context. For DDD work, give it the matching `ddd-*` skill as well; `quarkus-ddd` on its own is deliberately incomplete.
+Codex can use the same files as guidance. Point it at the repository or copy the relevant `skills/*/SKILL.md` into its context. For DDD work, give it the matching `ddd-*` skill as well, and for TDD the `tdd-*` skills; `quarkus-ddd` and `quarkus-tdd` on their own are deliberately incomplete.
 
 ## Repository structure
 
@@ -84,9 +101,12 @@ Codex can use the same files as guidance. Point it at the repository or copy the
     ├── quarkus-app/
     │   ├── SKILL.md
     │   └── references/            (extensions.md, rhbq.md)
-    └── quarkus-ddd/
+    ├── quarkus-ddd/
+    │   ├── SKILL.md
+    │   └── references/            (foundations, services, persistence, domain-events, architecture-tests)
+    └── quarkus-tdd/
         ├── SKILL.md
-        └── references/            (foundations, services, persistence, domain-events, architecture-tests)
+        └── references/            (tdd-cycle, testing)
 ```
 
 ## Prerequisites
@@ -98,4 +118,4 @@ Codex can use the same files as guidance. Point it at the repository or copy the
 
 ## Contributing
 
-Keep `quarkus-app` about the project and `quarkus-ddd` about mechanics. If a change to `quarkus-ddd` would redefine a DDD concept, it belongs in the `ddd-*` repository instead. The `references/*.md` files cite `ddd-skills` Core Rule numbers; they are written against `ddd-skills 1.x`.
+Keep `quarkus-app` about the project, `quarkus-ddd` about DDD mechanics, and `quarkus-tdd` about test mechanics. If a change to `quarkus-ddd` would redefine a DDD concept, it belongs in the `ddd-*` repository; if a change to `quarkus-tdd` would redefine a TDD rule, it belongs in the `tdd-*` repository. The `references/*.md` files cite `ddd-skills` and `tdd-skills` Core Rule numbers; they are written against the `1.x` versions.
