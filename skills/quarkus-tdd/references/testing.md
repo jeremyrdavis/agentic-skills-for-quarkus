@@ -76,7 +76,43 @@ class OrdersResourceTest {
 Per-argument behavior (`KNOWN` succeeds, `UNKNOWN` throws) is ordinary
 `Mockito.when(...)` stubbing in `@BeforeEach`. It never needs `QuarkusMock`.
 
-## 2. Integration-test companion
+## 2. Integration-test companion — black-box tests only
+
+A `@QuarkusIntegrationTest` runs the packaged artifact in a separate process.
+Nothing from the test JVM reaches it: `@Inject` fields stay null, `@InjectMock`
+and `QuarkusMock` install nothing, `@TestTransaction` has no transaction to
+join. So `OrdersResourceTest` above has **no** companion — inheriting it would
+call `stubUseCase()` on a null mock. The companion belongs to a black-box test:
+REST Assured against real endpoints, Dev Services behind them, state set up
+through the API itself.
+
+```java
+package com.example.orders.api;
+
+import io.quarkus.test.junit.QuarkusTest;
+import org.junit.jupiter.api.Test;
+
+import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.equalTo;
+
+@QuarkusTest
+class OrdersFlowTest {                                                  // black-box: no @Inject, no mocks
+
+    static final String PLACE_ORDER = """
+        {"customerId": "c-1", "lines": [{"sku": "A", "quantity": 1, "unitPrice": 10.00}]}
+        """;
+
+    @Test
+    void an_order_placed_through_the_api_can_be_cancelled() {
+        String id = given().contentType("application/json").body(PLACE_ORDER)
+            .when().post("/orders")
+            .then().statusCode(201).extract().path("id");
+
+        given().when().post("/orders/{id}/cancel", id)
+            .then().statusCode(200).body("status", equalTo("CANCELLED"));
+    }
+}
+```
 
 ```java
 package com.example.orders.api;
@@ -84,17 +120,15 @@ package com.example.orders.api;
 import io.quarkus.test.junit.QuarkusIntegrationTest;
 
 @QuarkusIntegrationTest
-class OrdersResourceIT extends OrdersResourceTest {
-    // Same tests, run against the packaged artifact in target/. Nothing to add.
+class OrdersFlowIT extends OrdersFlowTest {
+    // Same tests, run against the packaged artifact. Nothing to add.
 }
 ```
 
-One line of value: inheritance. Check `pom.xml` for `<skipITs>true</skipITs>` —
-if set, `./mvnw verify` skips these; run `./mvnw verify -DskipITs=false` before
-a PR. `@InjectMock` is not available in integration tests (the app runs in a
-separate process); an IT companion of a test that mocks a bean exercises the
-real bean instead, so keep such ITs to tests whose stubs are inessential, or
-give the IT its own `@TestProfile`.
+One line of value: inheritance — but only when the parent is black-box. On
+Maven, check `pom.xml` for `<skipITs>true</skipITs>`; if set, `./mvnw verify`
+skips these, so run `./mvnw verify -DskipITs=false` before a PR. On Gradle, ITs
+run only through `./gradlew quarkusIntTest`.
 
 ## 3. Repository test — container tier, real Dev Services PostgreSQL
 
@@ -158,12 +192,17 @@ container beside it means two databases and flaky tests (mechanic 9).
   non-static one) or `@BeforeEach`;
 - **(b) a normal-scoped bean must be replaced for every injection point**, not
   only the field in the test class;
-- **(c) a test method needs a different whole instance** — then pair it with
-  `QuarkusMock.installMockForInstance(perTest, installedDefault)`, which overrides
-  for that method only and does nothing on its own.
+- **(c) a test method needs a different whole instance** — then
+  `QuarkusMock.installMockForInstance(perTest, bean)`, where `bean` is the
+  `@Inject`ed normal-scoped bean (its CDI client proxy — a raw object you built
+  yourself is not accepted). It overrides for that method only.
 
-Both are incompatible with JUnit parallel execution (they replace beans
-globally); with `junit.jupiter.execution.parallel.enabled`, stay on `@InjectMock`.
+Only normal-scoped beans (`@ApplicationScoped`, `@RequestScoped`) can be
+replaced; `@Singleton` cannot. Every mechanism here — `installMockForType`,
+`installMockForInstance`, and `@InjectMock`, which is built on them — replaces
+the bean globally for the running app, so `@QuarkusTest` classes that mock
+beans must not run under `junit.jupiter.execution.parallel.enabled`. Mocking
+is not an isolation mechanism; disable parallel execution for those classes.
 
 The legitimate case: a `Clock` fixed to one time by default, swapped to a
 different time for the one test that crosses an expiry. Nothing is stubbed
@@ -174,6 +213,7 @@ package com.example.orders.api;
 
 import io.quarkus.test.junit.QuarkusMock;
 import io.quarkus.test.junit.QuarkusTest;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -188,11 +228,12 @@ import static io.restassured.RestAssured.given;
 class OrderExpiryResourceTest {
 
     static final UUID KNOWN = UUID.fromString("0b5f6a3e-8d1c-4b7a-9c2e-1f3d5a7b9c0d");
-    static Clock defaultClock;
+
+    @Inject Clock clock;                                             // the @ApplicationScoped Clock bean's client proxy
 
     @BeforeAll
     static void installDefault() {
-        defaultClock = Clock.fixed(Instant.parse("2026-11-13T10:00:00Z"), ZoneOffset.UTC);
+        Clock defaultClock = Clock.fixed(Instant.parse("2026-11-13T10:00:00Z"), ZoneOffset.UTC);
         QuarkusMock.installMockForType(defaultClock, Clock.class);   // case (a): a real instance, built here
     }
 
@@ -204,16 +245,17 @@ class OrderExpiryResourceTest {
     @Test
     void an_order_has_expired_a_year_later() {
         Clock yearLater = Clock.fixed(Instant.parse("2027-11-13T10:00:00Z"), ZoneOffset.UTC);
-        QuarkusMock.installMockForInstance(yearLater, defaultClock); // case (c): this method only
+        QuarkusMock.installMockForInstance(yearLater, clock);        // case (c): this method only; second arg is the injected proxy
 
         given().when().get("/orders/{id}", KNOWN).then().statusCode(410);
     }
 }
 ```
 
-If the per-test instance is a `Mockito.mock(...)` with `when(...)` calls keyed
-on argument values, it is per-call stubbing wearing the wrong tool — go back
-to `@InjectMock`.
+The `Clock` producer must be `@ApplicationScoped`, not `@Singleton`, for
+either call to work. If the per-test instance is a `Mockito.mock(...)` with
+`when(...)` calls keyed on argument values, it is per-call stubbing wearing
+the wrong tool — go back to `@InjectMock`.
 
 ## Anti-patterns
 
@@ -227,6 +269,8 @@ to `@InjectMock`.
 | Test hits `/api/orders` while the resource declares `@Path("/orders")` | The test asserts a route that doesn't exist; its failure is uninformative. | Match the resource's `@Path` (mechanic 8). |
 | A `@QuarkusTest` asserting that a field was persisted by Hibernate or serialized by Jackson | Tests the framework, not your code. | Assert the behavior your service exposes (mechanic 11). |
 | An `*IT` that copies the test methods instead of `extends *Test` | Duplicates every method; the two drift. | `class FooIT extends FooTest {}` (mechanic 10). |
+| `*IT extends *Test` where the test uses `@Inject`, `@InjectMock`, or `@TestTransaction` | The IT runs the app in another process; injected fields are null and mocks install nothing. | Companions for black-box tests only; the mocked test stays a `@QuarkusTest` (mechanic 10). |
+| `installMockForInstance(mock, Clock.fixed(...))` | The second argument must be the injected bean's client proxy, not an object you built. | `@Inject Clock clock;` then `installMockForInstance(mock, clock)` (mechanic 6). |
 | Manual `@Testcontainers` PostgreSQL beside Dev Services | Two databases compete; slow and flaky. | Let Dev Services manage it (mechanic 9). |
 | `body(is("{...}"))` on a JSON response | Whole-body string compare; brittle to whitespace and field order. | JSON paths: `body("status", equalTo("CANCELLED"))` (mechanic 8). |
 

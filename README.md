@@ -32,10 +32,10 @@ It defines no DDD concepts of its own. Its `references/` directory holds the Qua
 Use **alongside** the `tdd-*` skills when writing or running tests in a Quarkus project. `tdd-test-list` decides what goes on the test list and in what order; `tdd-cycle` decides when a test is red, what green may change, when to refactor and commit. `quarkus-tdd` supplies the Quarkus side:
 
 - which tests run on the plain JVM and which need `@QuarkusTest` with Dev Services, and what "all previous tests pass" costs per tier;
-- the runner: `quarkus test` continuous testing during the loop, `./mvnw verify -DskipITs=false` before a PR;
+- the runner: `quarkus test` continuous testing during the loop; `./mvnw verify -DskipITs=false` or `./gradlew build quarkusIntTest` before a PR;
 - the first red as a `javac` error and the stub convention (`throw new UnsupportedOperationException()`);
 - where the `[TEST]` list lives and how test classes and methods are named;
-- `@InjectMock` versus `QuarkusMock`, REST Assured, `@TestTransaction`, the `*IT extends *Test` companion, and what never to mock.
+- `@InjectMock` versus `QuarkusMock`, REST Assured, `@TestTransaction`, the `*IT extends *Test` companion for black-box tests, and what never to mock.
 
 It defines no TDD rule of its own. Its `references/` directory holds `tdd-cycle.md` (one worked loop adding `cancel()` to an `Order`) and `testing.md` (the test tooling, absorbed from the earlier standalone `quarkus-testing` skill).
 

@@ -14,7 +14,7 @@ Setup: `quarkus test` is running in a second terminal (mechanic 2). Mode is
 ## 0. The list — `tdd-test-list` Rules 1–5, mechanic 4
 
 Behavior only, ZOMBIES walked, simplest forcing case first, exceptions last.
-It lives at the bottom of the test class and shrinks as tests are written.
+It lives at the bottom of the test class and shrinks at each green commit.
 
 ```java
 package com.example.orders.domain;                    // plain-JVM tier (mechanic 1)
